@@ -13,6 +13,8 @@ app.use(express.json());
 
 // Rutas de la API
 app.use('/api', require('./routes/authRoutes.js'));
+app.use('/api', require('./routes/walkerRoutes.js'));
+app.use('/api', require('./routes/reservationRoutes.js'));
 
 // Ruta principal
 app.get('/', (req, res) => {
