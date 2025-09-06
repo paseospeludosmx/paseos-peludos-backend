@@ -12,7 +12,7 @@ app.use(cors());
 app.use(express.json());
 
 // Rutas de la API
-app.use('/api', require('./routes/authRoutes'));
+app.use('/api', require('./routes/authRoutes.js'));
 
 // Ruta principal
 app.get('/', (req, res) => {
