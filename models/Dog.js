@@ -1,14 +1,13 @@
+// models/Dog.js
 const mongoose = require('mongoose');
 
 const dogSchema = new mongoose.Schema({
-  owner:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  name:      { type: String, required: true, trim: true },
-  breed:     { type: String, trim: true },
-  ageYears:  { type: Number, min: 0 },
-  weightKg:  { type: Number, min: 0 },
-  notes:     { type: String },
-  photoUrl:  { type: String },
-  vaccinated:{ type: Boolean, default: true }
+  user:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  name:     { type: String, required: true },
+  breed:    { type: String },
+  ageYears: { type: Number },
+  weightKg: { type: Number },
+  notes:    { type: String }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Dog', dogSchema);

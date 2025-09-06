@@ -1,12 +1,13 @@
+// controllers/authController.js
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 // Modelos
 const User = require('../models/User.js');
 const Walker = require('../models/Walker.js');
-const Dog = require('../models/Dog.js'); // <- para registrar cliente con perro (opcional)
+const Dog = require('../models/Dog.js'); // Debe tener { user: ObjectId, name, breed, ageYears, weightKg, notes }
 
-// === Helpers ===
+// ===== Helpers =====
 function signToken(user) {
   return jwt.sign(
     { id: user._id.toString(), role: user.role },
@@ -21,7 +22,7 @@ function pick(obj, keys) {
   return out;
 }
 
-// === Controladores ===
+// ===== Controladores =====
 
 // Registro de PASEADOR
 async function registerWalker(req, res) {
@@ -48,7 +49,7 @@ async function registerWalker(req, res) {
     );
     const user = await User.create(userPayload);
 
-    // Nota: availability aquí debe venir como arreglo [{ day:'sat', slots:[] }, ...]
+    // availability debe venir como arreglo [{ day:'sat', slots:[] }, ...]
     const walkerPayload = pick(
       { user: user._id, bio, zones, availability, ratePerHour, services, experienceYears, vehicles },
       ['user','bio','zones','availability','ratePerHour','services','experienceYears','vehicles']
@@ -58,7 +59,10 @@ async function registerWalker(req, res) {
     const token = signToken(user);
     return res.status(201).json({
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone, photoUrl: user.photoUrl }
+      user: {
+        id: user._id, name: user.name, email: user.email,
+        role: user.role, phone: user.phone, photoUrl: user.photoUrl
+      }
     });
   } catch (err) {
     console.error('registerWalker error', err);
@@ -76,24 +80,36 @@ async function registerClient(req, res) {
     if (exists) return res.status(409).json({ message: 'El correo ya está registrado.' });
 
     const passwordHash = await bcrypt.hash(password, 10);
+
     const user = await User.create({
       name,
       email: emailLc,
       passwordHash,
-      phone,
+      phone: phone || '',
       role: 'cliente',
       isActive: true
     });
 
     // Perro opcional al momento de registro
     if (dog && dog.name) {
-      await Dog.create({ owner: user._id, ...dog });
+      // Asegura nombres de campos compatibles con el modelo Dog
+      await Dog.create({
+        user: user._id,
+        name: dog.name,
+        breed: dog.breed,
+        ageYears: dog.ageYears,
+        weightKg: dog.weightKg,
+        notes: dog.notes || ''
+      });
     }
 
     const token = signToken(user);
     return res.status(201).json({
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone }
+      user: {
+        id: user._id, name: user.name, email: user.email,
+        role: user.role, phone: user.phone
+      }
     });
   } catch (err) {
     console.error('registerClient error', err);
@@ -117,7 +133,10 @@ async function login(req, res) {
     const token = signToken(user);
     return res.json({
       token,
-      user: { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone, photoUrl: user.photoUrl }
+      user: {
+        id: user._id, name: user.name, email: user.email,
+        role: user.role, phone: user.phone, photoUrl: user.photoUrl
+      }
     });
   } catch (err) {
     console.error('login error', err);
