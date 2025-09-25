@@ -6,15 +6,19 @@ require('dotenv').config();
 const app = express();
 
 // Middlewares
-// ❌ Antes: app.use(cors({ origin: '*', credentials: true }));
-// ✅ Ahora: CORS simple sin credentials
 app.use(cors());
 app.use(express.json());
 
-// Rutas de la API
+// Rutas EXISTENTES (déjalas tal cual)
 app.use('/api', require('./routes/authRoutes.js'));
 app.use('/api', require('./routes/walkerRoutes.js'));
 app.use('/api', require('./routes/reservationRoutes.js'));
+
+// Rutas NUEVAS (asegúrate de crear estos archivos en /routes y sus controladores)
+app.use('/api', require('./routes/walkRequestsRoutes.js'));     // POST /api/walk-requests
+app.use('/api', require('./routes/paymentsRoutes.js'));         // /api/payments/...
+app.use('/api', require('./routes/clarificationsRoutes.js'));   // /api/clarifications/...
+app.use('/api', require('./routes/billingRoutes.js'));          // /api/billing/cash-quota
 
 // Ruta principal
 app.get('/', (req, res) => {
