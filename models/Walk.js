@@ -1,22 +1,48 @@
 // models/Walk.js
 const mongoose = require('mongoose');
+const { Schema, Types } = mongoose;
 
-const walkSchema = new mongoose.Schema({
-  client:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },   // dueño
-  walker:   { type: mongoose.Schema.Types.ObjectId, ref: 'Walker', required: true }, // paseador
-  dog:      { type: mongoose.Schema.Types.ObjectId, ref: 'Dog' },                    // opcional
-  zone:     { type: String, trim: true },
-  date:     { type: Date, required: true },
-  duration: { type: String, default: '45m' }, // ejemplo: '30m', '45m', '1h'
-  notes:    { type: String, trim: true },
-
-  price:    { type: Number, default: 0 },
-
-  status:   { 
-    type: String,
-    enum: ['pending','confirmed','completed','canceled'],
-    default: 'pending'
+/**
+ * Walk (Paseo)
+ * - Relaciona cliente, paseador y perros
+ * - Guarda tiempos, polyline (ruta recorrida), fotos, notas, precio y surge
+ */
+const PolyPointSchema = new Schema(
+  {
+    lat: { type: Number, required: true },
+    lng: { type: Number, required: true },
+    at:  { type: Date,   default: Date.now },
+    accuracy: Number,
+    speed: Number
   },
-}, { timestamps: true });
+  { _id: false }
+);
 
-module.exports = mongoose.model('Walk', walkSchema);
+const WalkSchema = new Schema(
+  {
+    clientId: { type: Types.ObjectId, ref: 'User', required: true },
+    walkerId: { type: Types.ObjectId, ref: 'Walker', required: true },
+    dogIds:   [{ type: Types.ObjectId, ref: 'Dog' }],
+
+    startAt:  { type: Date, default: Date.now },
+    endAt:    { type: Date },
+
+    polyline: [PolyPointSchema],
+
+    photos:   [{ type: String }], // URLs (Cloudinary/S3) — se llenarán en /walks/:id/report
+    notes:    { type: String },
+
+    price:    { type: Number, default: 0 },
+    surge:    { type: Number, default: 0 }, // 0–1 (ej. 0.30)
+
+    status:   { type: String, enum: ['pending','ongoing','finished','cancelled'], default: 'ongoing' }
+  },
+  { timestamps: true }
+);
+
+// Índices útiles para listados
+WalkSchema.index({ walkerId: 1, startAt: -1 });
+WalkSchema.index({ clientId: 1, startAt: -1 });
+WalkSchema.index({ status: 1 });
+
+module.exports = mongoose.model('Walk', WalkSchema);

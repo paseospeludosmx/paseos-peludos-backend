@@ -23,6 +23,7 @@ const FRONT_ORIGIN = process.env.FRONT_ORIGIN
 app.use(
   cors({
     origin: FRONT_ORIGIN && FRONT_ORIGIN.length ? FRONT_ORIGIN : true, // true = permite todo en dev
+    credentials: true,
   })
 );
 
@@ -31,15 +32,43 @@ app.use(express.json());
 
 /* ----------------------- Rutas de la API ------------------------ */
 // Rutas EXISTENTES (déjalas tal cual si existen en tu proyecto)
-app.use('/api', require('./routes/authRoutes.js'));
-app.use('/api', require('./routes/walkerRoutes.js'));
-app.use('/api', require('./routes/reservationRoutes.js'));
+try {
+  app.use('/api', require('./routes/authRoutes.js'));
+} catch (e) {
+  console.warn('⚠️  No se pudo montar authRoutes.js:', e.message);
+}
+try {
+  app.use('/api', require('./routes/walkerRoutes.js'));
+} catch (e) {
+  console.warn('⚠️  No se pudo montar walkerRoutes.js:', e.message);
+}
+try {
+  app.use('/api', require('./routes/reservationRoutes.js'));
+} catch (e) {
+  console.warn('⚠️  No se pudo montar reservationRoutes.js:', e.message);
+}
 
 // Rutas NUEVAS (asegúrate de que existan los archivos y controladores)
-app.use('/api', require('./routes/walkRequestsRoutes.js'));     // POST /api/walk-requests
-app.use('/api', require('./routes/paymentsRoutes.js'));         // /api/payments/...
-app.use('/api', require('./routes/clarificationsRoutes.js'));   // /api/clarifications/...
-app.use('/api', require('./routes/billingRoutes.js'));          // /api/billing/cash-quota
+try {
+  app.use('/api', require('./routes/walkRequestsRoutes.js')); // POST /api/walk-requests
+} catch (e) {
+  console.warn('⚠️  No se pudo montar walkRequestsRoutes.js:', e.message);
+}
+try {
+  app.use('/api', require('./routes/paymentsRoutes.js')); // /api/payments/...
+} catch (e) {
+  console.warn('⚠️  No se pudo montar paymentsRoutes.js:', e.message);
+}
+try {
+  app.use('/api', require('./routes/clarificationsRoutes.js')); // /api/clarifications/...
+} catch (e) {
+  console.warn('⚠️  No se pudo montar clarificationsRoutes.js:', e.message);
+}
+try {
+  app.use('/api', require('./routes/billingRoutes.js')); // /api/billing/cash-quota
+} catch (e) {
+  console.warn('⚠️  No se pudo montar billingRoutes.js:', e.message);
+}
 
 /* ----------------------- Utilidades ----------------------------- */
 // Ruta principal
@@ -52,6 +81,22 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'paseos-api', time: new Date().toISOString() });
 });
 
+// Version (útil para diagnósticos y despliegues)
+app.get('/version', (_req, res) => {
+  res.json({
+    name: 'paseos-peludos-backend',
+    version: (() => {
+      try {
+        return require('./package.json').version || '0.0.0';
+      } catch {
+        return '0.0.0';
+      }
+    })(),
+    commit: process.env.GIT_COMMIT || null,
+    env: process.env.NODE_ENV || 'development',
+  });
+});
+
 /* ----------------------- Errores ------------------------------- */
 // 404
 app.use((req, res) => {
@@ -59,6 +104,14 @@ app.use((req, res) => {
 });
 
 // Manejo centralizado de errores
-app.use(require('./middlewares/error'));
+try {
+  app.use(require('./middlewares/error'));
+} catch (e) {
+  // Si no existe el middleware aún, devolvemos un handler simple
+  app.use((err, _req, res, _next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'Internal Server Error' });
+  });
+}
 
 module.exports = app;
