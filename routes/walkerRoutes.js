@@ -3,7 +3,13 @@ const express = require('express');
 const router = express.Router();
 const Walker = require('../models/Walker.js');
 
-// GET /api/walkers?zone=Roma&day=sat
+// ⬇️ Agregamos el controlador para cercanía y actualización de ubicación
+const {
+  getNearbyWalkers,
+  updateWalkerLocation,
+} = require('../controllers/walkerController');
+
+// GET /api/walkers?zone=Roma&day=sat  (TU RUTA EXISTENTE – SE RESPETA)
 router.get('/walkers', async (req, res) => {
   try {
     const { zone, day } = req.query;
@@ -18,5 +24,13 @@ router.get('/walkers', async (req, res) => {
     res.status(500).json({ message: 'Error al listar paseadores' });
   }
 });
+
+// ✅ NUEVO: Buscar paseadores por cercanía (GeoJSON en models/User.js)
+// GET /api/walkers/near?lon=-99.215&lat=19.622&km=3&limit=20
+router.get('/walkers/near', getNearbyWalkers);
+
+// ✅ NUEVO: Actualizar ubicación de un paseador (para que aparezca en /near)
+// PATCH /api/walkers/location  { walkerId, lon, lat }
+router.patch('/walkers/location', updateWalkerLocation);
 
 module.exports = router;
