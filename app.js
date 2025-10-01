@@ -38,7 +38,8 @@ try {
   console.warn('⚠️  No se pudo montar authRoutes.js:', e.message);
 }
 try {
-  app.use('/api', require('./routes/walkerRoutes.js'));
+  // 👇 CAMBIO: antes estaba '/api' (podía interceptar cualquier cosa como /api/:id)
+  app.use('/api/walkers', require('./routes/walkerRoutes.js'));
 } catch (e) {
   console.warn('⚠️  No se pudo montar walkerRoutes.js:', e.message);
 }
@@ -68,6 +69,13 @@ try {
   app.use('/api', require('./routes/billingRoutes.js')); // /api/billing/cash-quota
 } catch (e) {
   console.warn('⚠️  No se pudo montar billingRoutes.js:', e.message);
+}
+
+/* 👇 AGREGADO: rutas de paseos (assigned/my/today, etc.) */
+try {
+  app.use('/api/walks', require('./routes/walksRoutes.js'));
+} catch (e) {
+  console.warn('⚠️  No se pudo montar walksRoutes.js:', e.message);
 }
 
 /* ----------------------- Utilidades ----------------------------- */

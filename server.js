@@ -18,6 +18,24 @@ try {
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
 
+// ------------------------------------------------------------------
+// 🔌 MONTAJE DE RUTAS API (AÑADIDO)
+//   Quedan disponibles en:
+//   - GET  /api/walks/assigned?walkerId=...
+//   - GET  /api/walks/my?clientId=...
+//   - GET  /api/walks/assigned/today ...
+//   - GET  /api/walks/my/today ...
+//   - PATCH /api/walkers/:walkerId/availability
+// ------------------------------------------------------------------
+app.use('/api/walks', require('./routes/walksRoutes'));
+app.use('/api/walkers', require('./routes/walkerRoutes'));
+
+// Endpoint de salud en JSON (para pruebas desde la app)
+app.get('/health', (req, res) => {
+  res.json({ ok: true, service: 'paseos-api', time: new Date().toISOString() });
+});
+// ------------------------------------------------------------------
+
 // HTTP server
 const server = http.createServer(app);
 

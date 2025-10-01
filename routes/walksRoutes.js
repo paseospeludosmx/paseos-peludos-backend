@@ -1,159 +1,145 @@
 // routes/walksRoutes.js
 const express = require('express');
-const Joi = require('joi');
 const router = express.Router();
 
-const requireAuth = require('../middlewares/requireAuth');
-const Walk   = require('../models/Walk');
-const Walker = require('../models/Walker');
+// Ajusta el path si tus modelos están en otra carpeta:
+const Walk = require('../models/Walk');      // Walk: { walker, client, startTimePlanned, endTimePlanned, status, dog, ... }
+const Dog  = require('../models/Dog');       // opcional, solo si quieres populate
+const User = require('../models/User');      // opcional, por si ocupas validar id
 
-const isClient = (role) => role === 'client'  || role === 'cliente';
-const isWalker = (role) => role === 'walker'  || role === 'paseador';
-const isAdmin  = (role) => role === 'admin';
+// Utilidad: asegurar que el id tiene pinta de MongoId (para errores claros)
+const isMongoId = (id) => /^[a-f\d]{24}$/i.test(id);
 
-// ------------------------- POST /api/walks (crear/iniciar) -------------------------
-const createSchema = Joi.object({
-  clientId: Joi.string().hex().length(24).optional(),     // si el que llama es cliente: se fuerza a su id
-  walkerId: Joi.string().hex().length(24).required(),
-  dogIds:   Joi.array().items(Joi.string().hex().length(24)).default([]),
-  startAt:  Joi.date().optional(),
-  notes:    Joi.string().allow('').optional(),
-  price:    Joi.number().min(0).optional(),
-  surge:    Joi.number().min(0).max(1).optional()
-});
+// Utilidad: límites del día (hoy o de una fecha YYYY-MM-DD)
+function dayBounds(dateStr) {
+  const base = dateStr ? new Date(`${dateStr}T00:00:00.000Z`) : new Date();
+  // Creamos inicio/fin del día en la zona del servidor
+  const start = new Date(base);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(base);
+  end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
 
-router.post('/walks', requireAuth, async (req, res) => {
+// -------------------------------
+// GET /api/walks/assigned?walkerId=...
+// Devuelve paseos asignados a un paseador (ordenados por fecha/hora)
+// -------------------------------
+router.get('/assigned', async (req, res) => {
   try {
-    const { value, error } = createSchema.validate(req.body, { stripUnknown: true });
-    if (error) return res.status(400).json({ error: error.message });
+    const { walkerId } = req.query;
+    if (!walkerId) return res.status(400).json({ message: 'walkerId es requerido' });
+    if (!isMongoId(walkerId)) return res.status(400).json({ message: 'walkerId inválido' });
 
-    // resolver clientId según rol
-    let clientId = value.clientId;
-    if (isClient(req.user.role)) clientId = req.user.id;          // el cliente solo puede crear para sí
-    if (!clientId && !isAdmin(req.user.role)) {
-      return res.status(400).json({ error: 'clientId requerido (o inicia sesión como cliente)' });
-    }
-
-    // validar que el walker exista
-    const walkerExists = await Walker.exists({ _id: value.walkerId });
-    if (!walkerExists) return res.status(404).json({ error: 'Walker no encontrado' });
-
-    const walk = await Walk.create({
-      clientId,
-      walkerId: value.walkerId,
-      dogIds: value.dogIds,
-      startAt: value.startAt || new Date(),
-      notes: value.notes,
-      price: value.price ?? 0,
-      surge: value.surge ?? 0,
-      status: 'ongoing'
-    });
-
-    res.status(201).json({ ok: true, walk });
-  } catch (err) {
-    res.status(500).json({ error: 'Error creando paseo', detail: err.message });
-  }
-});
-
-// ------------------------- PATCH /api/walks/:id/finish (cerrar) -------------------------
-const finishSchema = Joi.object({
-  endAt: Joi.date().optional(),
-  notes: Joi.string().allow('').optional(),
-  price: Joi.number().min(0).optional(),
-  surge: Joi.number().min(0).max(1).optional(),
-  status: Joi.string().valid('finished','cancelled').default('finished')
-});
-
-router.patch('/walks/:id/finish', requireAuth, async (req, res) => {
-  try {
-    const { value, error } = finishSchema.validate(req.body, { stripUnknown: true });
-    if (error) return res.status(400).json({ error: error.message });
-
-    const walk = await Walk.findById(req.params.id);
-    if (!walk) return res.status(404).json({ error: 'Paseo no encontrado' });
-
-    // Autorización: walker asignado o admin, o cliente dueño (solo ver, pero permitimos cerrar si admin/walker)
-    if (isWalker(req.user.role)) {
-      const myWalker = await Walker.findOne({ user: req.user.id }).select('_id');
-      if (!myWalker || myWalker._id.toString() !== String(walk.walkerId)) {
-        return res.status(403).json({ error: 'No autorizado para cerrar este paseo' });
-      }
-    } else if (!isAdmin(req.user.role)) {
-      return res.status(403).json({ error: 'Solo paseador o admin pueden cerrar' });
-    }
-
-    walk.endAt = value.endAt || new Date();
-    if (typeof value.price === 'number') walk.price = value.price;
-    if (typeof value.surge === 'number') walk.surge = value.surge;
-    if (typeof value.notes === 'string') walk.notes = value.notes;
-    walk.status = value.status || 'finished';
-
-    await walk.save();
-    res.json({ ok: true, walk });
-  } catch (err) {
-    res.status(500).json({ error: 'Error cerrando paseo', detail: err.message });
-  }
-});
-
-// ------------------------- GET /api/walks (listar con filtros) -------------------------
-router.get('/walks', requireAuth, async (req, res) => {
-  try {
-    const { role = '', from, to, limit = '100' } = req.query;
-    let filter = {};
-    let max = Math.min(parseInt(limit, 10) || 100, 200);
-
-    // Filtro por rol
-    if (role === 'client' || role === 'cliente' || isClient(req.user.role)) {
-      filter.clientId = req.user.id;
-    } else if (role === 'walker' || role === 'paseador' || isWalker(req.user.role)) {
-      const myWalker = await Walker.findOne({ user: req.user.id }).select('_id');
-      if (!myWalker) return res.status(404).json({ error: 'Perfil de walker no encontrado' });
-      filter.walkerId = myWalker._id;
-    } else if (!isAdmin(req.user.role)) {
-      // si no especifica y no es admin, asumimos su rol
-      filter.clientId = req.user.id;
-    }
-
-    // Rango de fechas (en startAt)
-    if (from || to) {
-      filter.startAt = {};
-      if (from) filter.startAt.$gte = new Date(from);
-      if (to)   filter.startAt.$lte = new Date(to);
-    }
-
-    const walks = await Walk.find(filter)
-      .sort({ startAt: -1 })
-      .limit(max)
+    // Algunos proyectos guardan el id del "user" del paseador en "walker"
+    // y otros usan "walkerUser" o "walkerProfile". Probamos variantes comunes.
+    const walks = await Walk.find({
+      $or: [
+        { walker: walkerId },
+        { walkerUser: walkerId },
+      ],
+    })
+      .sort({ startTimePlanned: 1 })
+      .populate('dog', 'name breed')    // opcional
       .lean();
 
-    res.json({ count: walks.length, walks });
+    return res.json(walks || []);
   } catch (err) {
-    res.status(500).json({ error: 'Error listando paseos', detail: err.message });
+    console.error('GET /walks/assigned error:', err);
+    return res.status(500).json({ message: 'Error al listar paseos asignados' });
   }
 });
 
-// ------------------------- GET /api/walks/:id -------------------------
-router.get('/walks/:id', requireAuth, async (req, res) => {
+// -------------------------------
+// GET /api/walks/my?clientId=...
+// Devuelve paseos de un cliente (ordenados por fecha/hora)
+// -------------------------------
+router.get('/my', async (req, res) => {
   try {
-    const walk = await Walk.findById(req.params.id).lean();
-    if (!walk) return res.status(404).json({ error: 'Paseo no encontrado' });
+    const { clientId } = req.query;
+    if (!clientId) return res.status(400).json({ message: 'clientId es requerido' });
+    if (!isMongoId(clientId)) return res.status(400).json({ message: 'clientId inválido' });
 
-    // Autorización básica de lectura
-    if (isAdmin(req.user.role)) return res.json({ walk });
+    const walks = await Walk.find({
+      $or: [
+        { client: clientId },
+        { clientUser: clientId },
+      ],
+    })
+      .sort({ startTimePlanned: 1 })
+      .populate('dog', 'name breed')    // opcional
+      .lean();
 
-    const myWalker = isWalker(req.user.role)
-      ? await Walker.findOne({ user: req.user.id }).select('_id')
-      : null;
-
-    const canRead =
-      String(walk.clientId) === req.user.id ||
-      (myWalker && String(walk.walkerId) === myWalker._id.toString());
-
-    if (!canRead) return res.status(403).json({ error: 'No autorizado' });
-
-    res.json({ walk });
+    return res.json(walks || []);
   } catch (err) {
-    res.status(500).json({ error: 'Error obteniendo paseo', detail: err.message });
+    console.error('GET /walks/my error:', err);
+    return res.status(500).json({ message: 'Error al listar paseos del cliente' });
+  }
+});
+
+// ======================================================================
+// OPCIONALES (POR SI QUIERES PEDIR SOLO LOS DE HOY DESDE EL BACKEND)
+// ======================================================================
+
+// GET /api/walks/assigned/today?walkerId=...&date=YYYY-MM-DD&statuses=scheduled,assigned,in_progress
+router.get('/assigned/today', async (req, res) => {
+  try {
+    const { walkerId, date, statuses } = req.query;
+    if (!walkerId) return res.status(400).json({ message: 'walkerId es requerido' });
+    if (!isMongoId(walkerId)) return res.status(400).json({ message: 'walkerId inválido' });
+
+    const { start, end } = dayBounds(date);
+    const statusList = (statuses ? String(statuses) : '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+
+    const query = {
+      $and: [
+        { $or: [{ walker: walkerId }, { walkerUser: walkerId }] },
+        { startTimePlanned: { $gte: start, $lte: end } },
+      ],
+    };
+    if (statusList.length) query.$and.push({ status: { $in: statusList } });
+
+    const walks = await Walk.find(query)
+      .sort({ startTimePlanned: 1 })
+      .populate('dog', 'name breed')
+      .lean();
+
+    return res.json(walks || []);
+  } catch (err) {
+    console.error('GET /walks/assigned/today error:', err);
+    return res.status(500).json({ message: 'Error al listar paseos del día (paseador)' });
+  }
+});
+
+// GET /api/walks/my/today?clientId=...&date=YYYY-MM-DD&statuses=scheduled,assigned,in_progress
+router.get('/my/today', async (req, res) => {
+  try {
+    const { clientId, date, statuses } = req.query;
+    if (!clientId) return res.status(400).json({ message: 'clientId es requerido' });
+    if (!isMongoId(clientId)) return res.status(400).json({ message: 'clientId inválido' });
+
+    const { start, end } = dayBounds(date);
+    const statusList = (statuses ? String(statuses) : '')
+      .split(',').map(s => s.trim()).filter(Boolean);
+
+    const query = {
+      $and: [
+        { $or: [{ client: clientId }, { clientUser: clientId }] },
+        { startTimePlanned: { $gte: start, $lte: end } },
+      ],
+    };
+    if (statusList.length) query.$and.push({ status: { $in: statusList } });
+
+    const walks = await Walk.find(query)
+      .sort({ startTimePlanned: 1 })
+      .populate('dog', 'name breed')
+      .lean();
+
+    return res.json(walks || []);
+  } catch (err) {
+    console.error('GET /walks/my/today error:', err);
+    return res.status(500).json({ message: 'Error al listar paseos del día (cliente)' });
   }
 });
 
