@@ -47,6 +47,11 @@ app.use((req, _res, next) => {
 /* ----------------------- Rutas de la API ------------------------ */
 // Rutas EXISTENTES (déjalas tal cual si existen en tu proyecto)
 try {
+  app.use('/api', require('./routes/appUsersReadOnlyRoutes.js'));
+} catch (e) {
+  console.warn('⚠️  No se pudo montar appUsersReadOnlyRoutes.js:', e.message);
+}
+try {
   app.use('/api', require('./routes/authRoutes.js'));
 } catch (e) {
   console.warn('⚠️  No se pudo montar authRoutes.js:', e.message);
@@ -66,6 +71,11 @@ try {
 }
 
 // Rutas NUEVAS (asegúrate de que existan los archivos y controladores)
+try {
+  app.use('/api', require('./routes/walkerRoutes.js'));
+} catch (e) {
+  console.warn('⚠️  No se pudo montar walkerRoutes.js:', e.message);
+}
 try {
   app.use('/api', require('./routes/walkRequestsRoutes.js')); // POST /api/walk-requests
 } catch (e) {
