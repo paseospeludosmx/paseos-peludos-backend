@@ -30,6 +30,20 @@ app.use(
 // Body parser
 app.use(express.json());
 
+/* ---------- LOG extra para debug de body y headers en endpoints sensibles ---------- */
+app.use((req, _res, next) => {
+  if (req.method !== 'GET') {
+    console.log(`➡️  ${req.method} ${req.originalUrl}`);
+    if (req.headers['content-type']) {
+      console.log('   content-type:', req.headers['content-type']);
+    }
+    if (req.originalUrl.includes('register') || req.originalUrl.includes('walker')) {
+      console.log('   body:', JSON.stringify(req.body));
+    }
+  }
+  next();
+});
+
 /* ----------------------- Rutas de la API ------------------------ */
 // Rutas EXISTENTES (déjalas tal cual si existen en tu proyecto)
 try {
@@ -38,8 +52,10 @@ try {
   console.warn('⚠️  No se pudo montar authRoutes.js:', e.message);
 }
 try {
-  // 👇 CAMBIO: antes estaba '/api' (podía interceptar cualquier cosa como /api/:id)
-  app.use('/api/walkers', require('./routes/walkerRoutes.js'));
+  // ⬅️  FIX: volvemos a montar walkerRoutes en /api
+  // porque dentro del archivo usas rutas con prefijo '/walkers'
+  // (si lo montas en /api/walkers te queda doble /walkers)
+  app.use('/api', require('./routes/walkerRoutes.js'));
 } catch (e) {
   console.warn('⚠️  No se pudo montar walkerRoutes.js:', e.message);
 }
@@ -71,35 +87,31 @@ try {
   console.warn('⚠️  No se pudo montar billingRoutes.js:', e.message);
 }
 
-/* 👇 AGREGADO: rutas de paseos (assigned/my/today, etc.) */
+/* 👇 Rutas de paseos */
 try {
   app.use('/api/walks', require('./routes/walksRoutes.js'));
 } catch (e) {
   console.warn('⚠️  No se pudo montar walksRoutes.js:', e.message);
 }
 
-/* 👇 AGREGADO: ruta de administración para listar usuarios de Firebase Auth
-   GET /api/admin/users  (protegida con header X-Admin-Key)
-*/
+/* 👇 Admin Firebase Auth */
 try {
   const adminUserRoutes = require('./routes/adminUserRoutes.js');
-  app.use('/api', adminUserRoutes); // expone /api/admin/users
+  app.use('/api', adminUserRoutes); // /api/admin/users
 } catch (e) {
   console.warn('⚠️  No se pudo montar adminUserRoutes.js:', e.message);
 }
 
-/* 👇 AGREGADO: ruta para listar usuarios de tu DB (cliente/paseador/admin)
-   GET /api/app-users?role=cliente
-   GET /api/app-users?role=paseador
-*/
+/* 👇 Usuarios de la DB */
 try {
-  app.use('/api', require('./routes/appUsersRoutes.js')); // expone /api/app-users
+  app.use('/api', require('./routes/appUsersRoutes.js')); // /api/app-users
 } catch (e) {
   console.warn('⚠️  No se pudo montar appUsersRoutes.js:', e.message);
 }
 
+/* 👇 Registro de paseador (POST /api/walkers/register) */
 try {
-  app.use('/api', require('./routes/walkerRegisterRoutes.js')); // POST /api/walkers/register
+  app.use('/api', require('./routes/walkerRegisterRoutes.js'));
 } catch (e) {
   console.warn('⚠️  No se pudo montar walkerRegisterRoutes.js:', e.message);
 }
@@ -116,7 +128,7 @@ app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'paseos-api', time: new Date().toISOString() });
 });
 
-// Version (útil para diagnósticos y despliegues)
+// Version
 app.get('/version', (_req, res) => {
   res.json({
     name: 'paseos-peludos-backend',
@@ -132,21 +144,24 @@ app.get('/version', (_req, res) => {
   });
 });
 
-/* ----------------------- Errores ------------------------------- */
-// 404
+/* ----------------------- 404 ------------------------------- */
 app.use((req, res) => {
+  console.warn(`❓  404 en ${req.method} ${req.originalUrl}`);
   res.status(404).json({ error: 'Not found' });
 });
 
-// Manejo centralizado de errores
-try {
-  app.use(require('./middlewares/error'));
-} catch (e) {
-  // Si no existe el middleware aún, devolvemos un handler simple
-  app.use((err, _req, res, _next) => {
-    console.error('Unhandled error:', err);
-    res.status(500).json({ error: 'Internal Server Error' });
-  });
-}
+/* ----------------------- Errores ------------------------------- */
+app.use((err, _req, res, _next) => {
+  console.error('💥 Unhandled error:', err);
+  const expose = process.env.DEBUG_ERRORS === '1' || process.env.DEBUG_ERRORS === 'true';
+  if (expose) {
+    return res.status(err.status || 500).json({
+      error: err.message || 'Internal Server Error',
+      stack: err.stack,
+      code: err.code || null
+    });
+  }
+  res.status(500).json({ error: 'Internal Server Error' });
+});
 
 module.exports = app;

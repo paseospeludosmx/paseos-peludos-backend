@@ -10,7 +10,8 @@
     "test": "node -e \"console.log('No tests yet')\"",
     "ws:sub": "node tools/ws-subscribe.js http://127.0.0.1:5000 demo-walker",
     "ws:send": "node tools/ws-send-location.js http://127.0.0.1:5000 demo-walker 19.4326 -99.1332",
-    "smoke:walk": "node tools/smoke.walk.js http://127.0.0.1:5000 \"%CLIENT_EMAIL%\" \"%CLIENT_PASS%\" \"%WALKER_EMAIL%\" \"%WALKER_PASS%\""
+    "smoke:walk": "node tools/smoke.walk.js http://127.0.0.1:5000 \"%CLIENT_EMAIL%\" \"%CLIENT_PASS%\" \"%WALKER_EMAIL%\" \"%WALKER_PASS%\"",
+    "list:users": "node scripts/list-users.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
