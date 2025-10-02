@@ -11,30 +11,15 @@ try {
   ({ Server } = require('socket.io'));
 } catch (e) {
   console.warn('⚠️  socket.io no está instalado. Ejecutando SIN WebSockets.');
-  console.warn('   > Solución: npm i socket.io');
+  console.warn('   > Si lo necesitas: npm i socket.io');
   Server = null;
 }
 
 const PORT = process.env.PORT || 5000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-// ------------------------------------------------------------------
-// 🔌 MONTAJE DE RUTAS API (AÑADIDO)
-//   Quedan disponibles en:
-//   - GET  /api/walks/assigned?walkerId=...
-//   - GET  /api/walks/my?clientId=...
-//   - GET  /api/walks/assigned/today ...
-//   - GET  /api/walks/my/today ...
-//   - PATCH /api/walkers/:walkerId/availability
-// ------------------------------------------------------------------
-app.use('/api/walks', require('./routes/walksRoutes'));
-app.use('/api/walkers', require('./routes/walkerRoutes'));
-
-// Endpoint de salud en JSON (para pruebas desde la app)
-app.get('/health', (req, res) => {
-  res.json({ ok: true, service: 'paseos-api', time: new Date().toISOString() });
-});
-// ------------------------------------------------------------------
+// ❗️Importante: las rutas y /health se montan en app.js, no aquí.
+// (Tu app.js ya las monta. No dupliquemos.)
 
 // HTTP server
 const server = http.createServer(app);
@@ -42,7 +27,6 @@ const server = http.createServer(app);
 // Socket.IO (dev-friendly CORS)
 if (Server) {
   const io = new Server(server, {
-    // Permite cualquier origin en dev para evitar bloqueos con clientes Node/CLI
     cors: { origin: true, credentials: true },
     connectionStateRecovery: {}
   });
@@ -79,8 +63,13 @@ if (!MONGO_URI) {
   process.exit(1);
 }
 
-const mongoOpts = {};
-if (process.env.MONGO_DB) mongoOpts.dbName = process.env.MONGO_DB;
+// Opciones recomendadas (no agregan puerto; solo timeouts/reintentos)
+const mongoOpts = {
+  // Solo define dbName si QUIERES sobreescribir la DB de la URI:
+  ...(process.env.MONGO_DB ? { dbName: process.env.MONGO_DB } : {}),
+  serverSelectionTimeoutMS: 10000,
+  retryWrites: true
+};
 
 mongoose
   .connect(MONGO_URI, mongoOpts)

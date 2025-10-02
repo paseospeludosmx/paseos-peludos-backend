@@ -78,6 +78,33 @@ try {
   console.warn('⚠️  No se pudo montar walksRoutes.js:', e.message);
 }
 
+/* 👇 AGREGADO: ruta de administración para listar usuarios de Firebase Auth
+   GET /api/admin/users  (protegida con header X-Admin-Key)
+*/
+try {
+  const adminUserRoutes = require('./routes/adminUserRoutes.js');
+  app.use('/api', adminUserRoutes); // expone /api/admin/users
+} catch (e) {
+  console.warn('⚠️  No se pudo montar adminUserRoutes.js:', e.message);
+}
+
+/* 👇 AGREGADO: ruta para listar usuarios de tu DB (cliente/paseador/admin)
+   GET /api/app-users?role=cliente
+   GET /api/app-users?role=paseador
+*/
+try {
+  app.use('/api', require('./routes/appUsersRoutes.js')); // expone /api/app-users
+} catch (e) {
+  console.warn('⚠️  No se pudo montar appUsersRoutes.js:', e.message);
+}
+
+try {
+  app.use('/api', require('./routes/walkerRegisterRoutes.js')); // POST /api/walkers/register
+} catch (e) {
+  console.warn('⚠️  No se pudo montar walkerRegisterRoutes.js:', e.message);
+}
+
+
 /* ----------------------- Utilidades ----------------------------- */
 // Ruta principal
 app.get('/', (_req, res) => {
