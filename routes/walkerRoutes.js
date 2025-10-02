@@ -1,6 +1,8 @@
 // routes/walkerRoutes.js
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
+
 const Walker = require('../models/Walker.js');
 
 // Controladores existentes (cercanía y ubicación)
@@ -9,12 +11,12 @@ const {
   updateWalkerLocation,
 } = require('../controllers/walkerController');
 
-// (Opcional) por si la disponibilidad estuviera en User y no en Walker
+// (Opcional) por si la disponibilidad/registro estuviera en User y no en Walker
 let User = null;
 try {
-  User = require('../models/User.js');
+  User = require('../models/User.js'); // Tu modelo con role: 'cliente' | 'paseador' | 'admin'
 } catch (_) {
-  // sin User, no pasa nada, usamos solo Walker
+  // sin User, no pasa nada; usaremos colección 'users' directo si hace falta
 }
 
 // Helpers
@@ -24,7 +26,7 @@ const isMongoId = (id) => /^[a-f\d]{24}$/i.test(id);
 // LISTADO DE PASEADORES (RUTA EXISTENTE — SE RESPETA)
 // =====================================================
 
-// Versión corta (si montas este router en /api/walkers → GET /api/walkers)
+// Versión corta (si montas este router en /api → GET /api/walkers)
 async function listWalkers(req, res) {
   try {
     const { zone, day } = req.query;
@@ -41,9 +43,8 @@ async function listWalkers(req, res) {
 }
 
 // Compatibilidad: ambas rutas funcionan según cómo montes el router
-router.get('/', listWalkers);             // /api/walkers
-router.get('/walkers', listWalkers);      // /api/walkers/walkers  (tu ruta previa)
-
+router.get('/', listWalkers);             // /api/walkers   (si lo montas en /api/walkers)
+router.get('/walkers', listWalkers);      // /api/walkers   (si lo montas en /api)
 
 // =====================================================
 // GEO: BUSCAR POR CERCANÍA  (RUTA EXISTENTE — SE RESPETA)
@@ -52,7 +53,6 @@ router.get('/walkers', listWalkers);      // /api/walkers/walkers  (tu ruta prev
 router.get('/near', getNearbyWalkers);
 router.get('/walkers/near', getNearbyWalkers); // compatibilidad
 
-
 // =====================================================
 // GEO: ACTUALIZAR UBICACIÓN (RUTA EXISTENTE — SE RESPETA)
 // =====================================================
@@ -60,9 +60,8 @@ router.get('/walkers/near', getNearbyWalkers); // compatibilidad
 router.patch('/location', updateWalkerLocation);
 router.patch('/walkers/location', updateWalkerLocation); // compatibilidad
 
-
 // =====================================================
-// ✅ NUEVO: DISPONIBILIDAD DEL PASEADOR
+// ✅ DISPONIBILIDAD DEL PASEADOR (SE RESPETA)
 // =====================================================
 
 // GET /api/walkers/:walkerId/availability  → { available: true|false }
@@ -131,6 +130,83 @@ router.patch('/:walkerId/availability', async (req, res) => {
   } catch (err) {
     console.error('PATCH /walkers/:id/availability error:', err);
     return res.status(500).json({ message: 'Error al actualizar disponibilidad' });
+  }
+});
+
+// =====================================================
+// ✅ REGISTRO DE PASEADOR (AHORA AQUÍ, SIN ARCHIVO APARTE)
+// =====================================================
+// POST /api/walkers/register
+router.post('/walkers/register', async (req, res) => {
+  try {
+    if (!req.is('application/json')) {
+      return res.status(415).json({ ok: false, error: 'Content-Type debe ser application/json' });
+    }
+
+    const {
+      name,
+      email,
+      password,
+      phone,
+      zones,
+      availability,
+      address,
+      photoUrl,
+    } = req.body || {};
+
+    if (!name || !password) {
+      return res.status(400).json({ ok: false, error: 'name y password son obligatorios' });
+    }
+
+    let normalizedEmail = undefined;
+    if (email) {
+      normalizedEmail = String(email).toLowerCase().trim();
+      if (!/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+        return res.status(400).json({ ok: false, error: 'email inválido' });
+      }
+    }
+
+    // ¿Duplicado por email?
+    if (normalizedEmail) {
+      if (User) {
+        const dup = await User.findOne({ email: normalizedEmail }).lean();
+        if (dup) return res.status(409).json({ ok: false, error: 'El email ya está registrado' });
+      } else {
+        const coll = require('mongoose').connection.collection('users');
+        const dup = await coll.findOne({ email: normalizedEmail });
+        if (dup) return res.status(409).json({ ok: false, error: 'El email ya está registrado' });
+      }
+    }
+
+    // Hash de contraseña -> tu schema exige passwordHash
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Documento alineado a TU modelo User (role en español)
+    const doc = {
+      name,
+      email: normalizedEmail,   // tu schema permite sparse:true
+      passwordHash,             // requerido por tu modelo
+      phone: phone || null,
+      role: 'paseador',         // 🔴 EN ESPAÑOL (NO 'walker')
+      photoUrl: photoUrl || null,
+      address: address || undefined,               // respeta sub-esquema
+      zones: Array.isArray(zones) ? zones : [],    // si no está en schema, Mongoose lo ignora
+      availability: Array.isArray(availability) ? availability : [],
+      createdAt: new Date(),
+    };
+
+    if (User) {
+      const saved = await User.create(doc);
+      return res.status(201).json({ ok: true, item: saved.toJSON() });
+    } else {
+      // Inserción directa si no hay modelo
+      const coll = require('mongoose').connection.collection('users');
+      const result = await coll.insertOne(doc);
+      return res.status(201).json({ ok: true, item: { _id: result.insertedId, ...doc } });
+    }
+  } catch (err) {
+    console.error('❌ Error al registrar paseador:', err);
+    return res.status(500).json({ ok: false, error: 'Error interno al registrar paseador' });
   }
 });
 

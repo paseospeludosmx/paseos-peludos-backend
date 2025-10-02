@@ -9,28 +9,23 @@ const morgan = require('morgan');
 const app = express();
 
 /* ----------------------- Middlewares base ----------------------- */
-// Seguridad HTTP
-app.use(helmet({ crossOriginResourcePolicy: false })); // permite servir imágenes/archivos si hace falta
-
-// Logs de peticiones
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan('tiny'));
 
-// CORS con whitelist desde .env (FRONT_ORIGIN puede ser 1 o varias URLs separadas por coma)
 const FRONT_ORIGIN = process.env.FRONT_ORIGIN
   ? process.env.FRONT_ORIGIN.split(',').map(s => s.trim())
   : null;
 
 app.use(
   cors({
-    origin: FRONT_ORIGIN && FRONT_ORIGIN.length ? FRONT_ORIGIN : true, // true = permite todo en dev
+    origin: FRONT_ORIGIN && FRONT_ORIGIN.length ? FRONT_ORIGIN : true,
     credentials: true,
   })
 );
 
-// Body parser
 app.use(express.json());
 
-/* ---------- LOG extra para debug de body y headers en endpoints sensibles ---------- */
+/* ---------- LOG extra para debug ---------- */
 app.use((req, _res, next) => {
   if (req.method !== 'GET') {
     console.log(`➡️  ${req.method} ${req.originalUrl}`);
@@ -45,110 +40,63 @@ app.use((req, _res, next) => {
 });
 
 /* ----------------------- Rutas de la API ------------------------ */
-// Rutas EXISTENTES (déjalas tal cual si existen en tu proyecto)
 try {
-  app.use('/api', require('./routes/appUsersReadOnlyRoutes.js'));
+  app.use('/api', require('./routes/localAuthRoutes.js')); // POST /api/auth/login
 } catch (e) {
-  console.warn('⚠️  No se pudo montar appUsersReadOnlyRoutes.js:', e.message);
+  console.warn('⚠️  No se pudo montar localAuthRoutes.js:', e.message);
 }
+
+try {
+  app.use('/api', require('./routes/appUsersReadOnlyRoutes.js')); // solo lectura
+} catch (e) { console.warn('⚠️  No se pudo montar appUsersReadOnlyRoutes.js:', e.message); }
+
 try {
   app.use('/api', require('./routes/authRoutes.js'));
-} catch (e) {
-  console.warn('⚠️  No se pudo montar authRoutes.js:', e.message);
-}
+} catch (e) { console.warn('⚠️  No se pudo montar authRoutes.js:', e.message); }
+
 try {
-  // ⬅️  FIX: volvemos a montar walkerRoutes en /api
-  // porque dentro del archivo usas rutas con prefijo '/walkers'
-  // (si lo montas en /api/walkers te queda doble /walkers)
+  // 👇 walkers (incluye AHORA el POST /api/walkers/register)
   app.use('/api', require('./routes/walkerRoutes.js'));
-} catch (e) {
-  console.warn('⚠️  No se pudo montar walkerRoutes.js:', e.message);
-}
+} catch (e) { console.warn('⚠️  No se pudo montar walkerRoutes.js:', e.message); }
+
 try {
   app.use('/api', require('./routes/reservationRoutes.js'));
-} catch (e) {
-  console.warn('⚠️  No se pudo montar reservationRoutes.js:', e.message);
-}
+} catch (e) { console.warn('⚠️  No se pudo montar reservationRoutes.js:', e.message); }
 
-// Rutas NUEVAS (asegúrate de que existan los archivos y controladores)
 try {
-  app.use('/api', require('./routes/walkerRoutes.js'));
-} catch (e) {
-  console.warn('⚠️  No se pudo montar walkerRoutes.js:', e.message);
-}
-try {
-  app.use('/api', require('./routes/walkRequestsRoutes.js')); // POST /api/walk-requests
-} catch (e) {
-  console.warn('⚠️  No se pudo montar walkRequestsRoutes.js:', e.message);
-}
-try {
-  app.use('/api', require('./routes/paymentsRoutes.js')); // /api/payments/...
-} catch (e) {
-  console.warn('⚠️  No se pudo montar paymentsRoutes.js:', e.message);
-}
-try {
-  app.use('/api', require('./routes/clarificationsRoutes.js')); // /api/clarifications/...
-} catch (e) {
-  console.warn('⚠️  No se pudo montar clarificationsRoutes.js:', e.message);
-}
-try {
-  app.use('/api', require('./routes/billingRoutes.js')); // /api/billing/cash-quota
-} catch (e) {
-  console.warn('⚠️  No se pudo montar billingRoutes.js:', e.message);
-}
+  app.use('/api', require('./routes/walkRequestsRoutes.js'));
+} catch (e) { console.warn('⚠️  No se pudo montar walkRequestsRoutes.js:', e.message); }
 
-/* 👇 Rutas de paseos */
+try {
+  app.use('/api', require('./routes/paymentsRoutes.js'));
+} catch (e) { console.warn('⚠️  No se pudo montar paymentsRoutes.js:', e.message); }
+
+try {
+  app.use('/api', require('./routes/clarificationsRoutes.js'));
+} catch (e) { console.warn('⚠️  No se pudo montar clarificationsRoutes.js:', e.message); }
+
+try {
+  app.use('/api', require('./routes/billingRoutes.js'));
+} catch (e) { console.warn('⚠️  No se pudo montar billingRoutes.js:', e.message); }
+
 try {
   app.use('/api/walks', require('./routes/walksRoutes.js'));
-} catch (e) {
-  console.warn('⚠️  No se pudo montar walksRoutes.js:', e.message);
-}
+} catch (e) { console.warn('⚠️  No se pudo montar walksRoutes.js:', e.message); }
 
-/* 👇 Admin Firebase Auth */
 try {
   const adminUserRoutes = require('./routes/adminUserRoutes.js');
   app.use('/api', adminUserRoutes); // /api/admin/users
-} catch (e) {
-  console.warn('⚠️  No se pudo montar adminUserRoutes.js:', e.message);
-}
+} catch (e) { console.warn('⚠️  No se pudo montar adminUserRoutes.js:', e.message); }
 
-/* 👇 Usuarios de la DB */
-try {
-  app.use('/api', require('./routes/appUsersRoutes.js')); // /api/app-users
-} catch (e) {
-  console.warn('⚠️  No se pudo montar appUsersRoutes.js:', e.message);
-}
-
-/* 👇 Registro de paseador (POST /api/walkers/register) */
-try {
-  app.use('/api', require('./routes/walkerRegisterRoutes.js'));
-} catch (e) {
-  console.warn('⚠️  No se pudo montar walkerRegisterRoutes.js:', e.message);
-}
-
+// ❌ Importante: NO montar 'walkerRegisterRoutes.js' ya que ahora está dentro de walkerRoutes.js
 
 /* ----------------------- Utilidades ----------------------------- */
-// Ruta principal
-app.get('/', (_req, res) => {
-  res.send('🐾 Paseos Peludos API funcionando');
-});
-
-// Healthcheck
-app.get('/health', (_req, res) => {
-  res.json({ ok: true, service: 'paseos-api', time: new Date().toISOString() });
-});
-
-// Version
+app.get('/', (_req, res) => res.send('🐾 Paseos Peludos API funcionando'));
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'paseos-api', time: new Date().toISOString() }));
 app.get('/version', (_req, res) => {
   res.json({
     name: 'paseos-peludos-backend',
-    version: (() => {
-      try {
-        return require('./package.json').version || '0.0.0';
-      } catch {
-        return '0.0.0';
-      }
-    })(),
+    version: (() => { try { return require('./package.json').version || '0.0.0'; } catch { return '0.0.0'; } })(),
     commit: process.env.GIT_COMMIT || null,
     env: process.env.NODE_ENV || 'development',
   });
