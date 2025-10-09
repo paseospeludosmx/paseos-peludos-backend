@@ -1,8 +1,11 @@
-// routes/walkerRoutes.js
+'use strict';
+
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const mongoose = require('mongoose');
 
+// Modelos
 const Walker = require('../models/Walker.js');
 
 // Controladores existentes (cercanía y ubicación)
@@ -172,7 +175,7 @@ router.post('/walkers/register', async (req, res) => {
         const dup = await User.findOne({ email: normalizedEmail }).lean();
         if (dup) return res.status(409).json({ ok: false, error: 'El email ya está registrado' });
       } else {
-        const coll = require('mongoose').connection.collection('users');
+        const coll = mongoose.connection.collection('users');
         const dup = await coll.findOne({ email: normalizedEmail });
         if (dup) return res.status(409).json({ ok: false, error: 'El email ya está registrado' });
       }
@@ -200,13 +203,84 @@ router.post('/walkers/register', async (req, res) => {
       return res.status(201).json({ ok: true, item: saved.toJSON() });
     } else {
       // Inserción directa si no hay modelo
-      const coll = require('mongoose').connection.collection('users');
+      const coll = mongoose.connection.collection('users');
       const result = await coll.insertOne(doc);
       return res.status(201).json({ ok: true, item: { _id: result.insertedId, ...doc } });
     }
   } catch (err) {
     console.error('❌ Error al registrar paseador:', err);
     return res.status(500).json({ ok: false, error: 'Error interno al registrar paseador' });
+  }
+});
+
+// =====================================================
+// === ALIAS DE COMPATIBILIDAD PARA /api/walkers/:id/availability ===
+//    (Soporta clientes que consumen /api + paths con /walkers/...)
+// =====================================================
+const isMongoIdCompat = (id) => mongoose.Types.ObjectId.isValid(id);
+
+let UserModelCompat = null;
+try { UserModelCompat = require('../models/User'); } catch {}
+
+const WalkerModelCompat = (() => {
+  try { return require('../models/Walker'); } catch { return null; }
+})();
+
+// GET /api/walkers/:walkerId/availability
+router.get('/walkers/:walkerId/availability', async (req, res) => {
+  try {
+    const { walkerId } = req.params;
+    if (!isMongoIdCompat(walkerId)) return res.status(400).json({ message: 'walkerId inválido' });
+
+    let found = null;
+    if (WalkerModelCompat) {
+      found = await WalkerModelCompat.findOne({ $or: [{ _id: walkerId }, { user: walkerId }] })
+        .select('available').lean();
+    }
+    if (!found && UserModelCompat) {
+      found = await UserModelCompat.findOne({ _id: walkerId, role: 'paseador' })
+        .select('available').lean();
+    }
+    if (!found) return res.status(404).json({ message: 'Paseador no encontrado' });
+    return res.json({ available: !!found.available });
+  } catch (e) {
+    console.error('alias GET /walkers/:id/availability error:', e);
+    return res.status(500).json({ message: 'Error' });
+  }
+});
+
+// PATCH /api/walkers/:walkerId/availability  { available: true|false }
+router.patch('/walkers/:walkerId/availability', async (req, res) => {
+  try {
+    const { walkerId } = req.params;
+    let { available } = req.body;
+    if (!isMongoIdCompat(walkerId)) return res.status(400).json({ message: 'walkerId inválido' });
+    if (typeof available !== 'boolean') {
+      if (typeof available === 'string') available = available.toLowerCase() === 'true';
+      else return res.status(400).json({ message: 'available debe ser true|false' });
+    }
+
+    let updated = null;
+    if (WalkerModelCompat) {
+      updated = await WalkerModelCompat.findOneAndUpdate(
+        { $or: [{ _id: walkerId }, { user: walkerId }] },
+        { $set: { available } },
+        { new: true }
+      ).select('available').lean();
+    }
+    if (!updated && UserModelCompat) {
+      const result = await UserModelCompat.updateOne(
+        { _id: walkerId, role: 'paseador' },
+        { $set: { available } }
+      );
+      updated = result && result.matchedCount ? { available } : null;
+    }
+
+    if (!updated) return res.status(404).json({ message: 'Paseador no encontrado' });
+    return res.json({ available: !!updated.available });
+  } catch (e) {
+    console.error('alias PATCH /walkers/:id/availability error:', e);
+    return res.status(500).json({ message: 'Error' });
   }
 });
 
